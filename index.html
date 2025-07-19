@@ -267,37 +267,45 @@
 
       // Helper para convertir número a formato de moneda con puntos y comas
       function formatMonto(monto) {
-          // Asegurarse de que el monto sea un número antes de formatear
-          const numMonto = parseFloat(monto.replace(/\./g, '').replace(',', '.')); // Eliminar puntos y cambiar coma por punto si existe
-          if (isNaN(numMonto)) {
-              return monto; // Devolver el monto original si no es un número válido
-          }
-          return numMonto.toLocaleString('es-PY', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+        // Asegurarse de que el monto sea un número antes de formatear
+        const numMonto = parseFloat(monto.replace(/\./g, "").replace(",", ".")); // Eliminar puntos y cambiar coma por punto si existe
+        if (isNaN(numMonto)) {
+          return monto; // Devolver el monto original si no es un número válido
+        }
+        return numMonto.toLocaleString("es-PY", {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 0,
+        });
       }
 
       // Helper para formatear fecha a "D de M de AAAA" (ej. 17 de Julio de 2025)
       function formatFechaEnPalabras(fechaIso) {
-          try {
-              const [year, month, day] = fechaIso.split('-').map(Number);
-              const date = new Date(year, month - 1, day);
-              const options = { day: 'numeric', month: 'long', year: 'numeric' };
-              return date.toLocaleDateString('es-PY', options);
-          } catch (e) {
-              console.error("Error al formatear fecha en palabras:", e);
-              return fechaIso; // Fallback al formato original si hay error
-          }
+        try {
+          const [year, month, day] = fechaIso.split("-").map(Number);
+          const date = new Date(year, month - 1, day);
+          const options = { day: "numeric", month: "long", year: "numeric" };
+          return date.toLocaleDateString("es-PY", options);
+        } catch (e) {
+          console.error("Error al formatear fecha en palabras:", e);
+          return fechaIso; // Fallback al formato original si hay error
+        }
       }
 
       // Helper para formatear fecha a "DD/MM/AAAA"
       function formatFechaDDMMYYYY(fechaIso) {
-          try {
-              const [year, month, day] = fechaIso.split('-').map(Number);
-              return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`;
-          } catch (e) {
-              console.error("Error al formatear fecha DD/MM/AAAA:", e);
-              return fechaIso; // Fallback al formato original si hay error
-          }
+        try {
+          const [year, month, day] = fechaIso.split("-").map(Number);
+          return `${String(day).padStart(2, "0")}/${String(
+            month
+          ).padStart(2, "0")}/${year}`;
+        } catch (e) {
+          console.error("Error al formatear fecha DD/MM/AAAA:", e);
+          return fechaIso; // Fallback al formato original si hay error
+        }
       }
+
+      // Variable global para almacenar el nombre/cargo de la firma cuando no hay imagen
+      let firmaTextoPersonalizado = "";
 
       // Inicialización
       document.addEventListener("DOMContentLoaded", function () {
@@ -314,9 +322,23 @@
         document.getElementById("fecha").value = `${year}-${month}-${day}`;
 
         // Cargar imágenes guardadas
-        cargarImagenGuardada("logoIzquierdo", "preview-logo-izq", "remove-logo-izq");
-        cargarImagenGuardada("logoDerecho", "preview-logo-der", "remove-logo-der");
+        cargarImagenGuardada(
+          "logoIzquierdo",
+          "preview-logo-izq",
+          "remove-logo-izq"
+        );
+        cargarImagenGuardada(
+          "logoDerecho",
+          "preview-logo-der",
+          "remove-logo-der"
+        );
         cargarImagenGuardada("firma", "preview-firma", "remove-firma");
+
+        // Cargar texto de firma personalizado (si existe)
+        const savedFirmaTexto = localStorage.getItem("firmaTextoPersonalizado");
+        if (savedFirmaTexto) {
+          firmaTextoPersonalizado = savedFirmaTexto;
+        }
 
         // Configurar listeners para botones de imágenes
         document
@@ -348,13 +370,18 @@
           });
 
         document.getElementById("remove-firma").addEventListener("click", function () {
-          eliminarImagen("firma", "preview-firma", "remove-firma");
+            eliminarImagen("firma", "preview-firma", "remove-firma");
+            // También borrar el texto de firma personalizado si se elimina la imagen
+            firmaTextoPersonalizado = "";
+            localStorage.removeItem("firmaTextoPersonalizado");
         });
 
         // Configurar generación de recibo (AHORA ES ASÍNCRONA)
-        document.getElementById("btn-generar").addEventListener("click", async function () {
-          await generarRecibo(); // Esperar a que se complete la generación
-        });
+        document
+          .getElementById("btn-generar")
+          .addEventListener("click", async function () {
+            await generarRecibo(); // Esperar a que se complete la generación
+          });
 
         // Configurar auto-incremento
         document.getElementById("auto-numero").addEventListener("change", function () {
@@ -391,6 +418,11 @@
             preview.src = event.target.result;
             preview.style.display = "block";
             document.getElementById(removeBtnId).style.display = "block";
+            // Si se selecciona una firma, borrar el texto personalizado
+            if (tipo === "firma") {
+                firmaTextoPersonalizado = "";
+                localStorage.removeItem("firmaTextoPersonalizado");
+            }
           };
           reader.readAsDataURL(file);
         };
@@ -402,6 +434,11 @@
         localStorage.removeItem(tipo);
         document.getElementById(previewId).style.display = "none";
         document.getElementById(removeBtnId).style.display = "none";
+        // Si se elimina la firma, limpiar el texto personalizado
+        if (tipo === "firma") {
+            firmaTextoPersonalizado = "";
+            localStorage.removeItem("firmaTextoPersonalizado");
+        }
       }
 
       async function generarRecibo() {
@@ -419,6 +456,40 @@
           alert("Por favor complete todos los campos requeridos");
           return;
         }
+
+        // --- Lógica de la firma ---
+        const firmaData = localStorage.getItem("firma");
+        let firmaDisplayTexto = "Tesorera"; // Valor por defecto si no hay imagen ni texto personalizado
+
+        if (!firmaData) {
+            // No hay imagen de firma
+            let confirmacionSinFirma = confirm("No se ha seleccionado firma ¿esto es correcto?");
+            if (!confirmacionSinFirma) {
+                // Si el usuario elige "No", detiene la generación para que corrija
+                return;
+            } else {
+                // Si el usuario elige "Sí", pide el nombre/cargo para la firma
+                let textoIngresado = prompt(
+                    "¿Quién debe firmar este documento?\n\nFavor completar este campo sin agregar sufijos (el/la), en lo posible solo especificar su cargo:",
+                    firmaTextoPersonalizado || "" // Usar valor guardado o vacío
+                );
+
+                if (textoIngresado !== null) { // Si el usuario no cancela el prompt
+                    firmaTextoPersonalizado = textoIngresado.trim() || "Tesorera"; // Si lo deja vacío, usa "Tesorera"
+                    localStorage.setItem("firmaTextoPersonalizado", firmaTextoPersonalizado);
+                } else {
+                    // Si el usuario cancela el segundo prompt, se mantiene el valor actual de firmaTextoPersonalizado
+                    firmaTextoPersonalizado = firmaTextoPersonalizado || "Tesorera";
+                }
+                firmaDisplayTexto = firmaTextoPersonalizado;
+            }
+        } else {
+            // Si hay firma cargada, asegurarse de que no haya texto personalizado guardado
+            firmaTextoPersonalizado = "";
+            localStorage.removeItem("firmaTextoPersonalizado");
+        }
+        // --- Fin Lógica de la firma ---
+
 
         // Formatear monto y fecha para el contenido
         const montoFormateado = formatMonto(monto);
@@ -464,13 +535,19 @@
           fechaEnPalabras,
           numeroRecibo: numeroCompleto,
           esCopia: false,
+          firmaTexto: firmaDisplayTexto, // Pasar el texto de la firma
         });
 
         // Línea punteada para cortar
         doc.setDrawColor(150, 150, 150);
         doc.setLineWidth(0.2);
         doc.setLineDash([2, 2], 0);
-        doc.line(margin, margin * 1.5 + reciboHeight, pageWidth - margin, margin * 1.5 + reciboHeight);
+        doc.line(
+          margin,
+          margin * 1.5 + reciboHeight,
+          pageWidth - margin,
+          margin * 1.5 + reciboHeight
+        );
         doc.setLineDash([], 0);
 
         // Generar segundo recibo (copia)
@@ -486,32 +563,37 @@
           fechaEnPalabras,
           numeroRecibo: numeroCompleto,
           esCopia: true,
+          firmaTexto: firmaDisplayTexto, // Pasar el texto de la firma
         });
 
         // Guardar PDF (Ahora se abre un diálogo para elegir la carpeta)
         try {
-            const pdfBlob = doc.output('blob');
-            // Nuevo nombre del archivo: "numero de recibo - nombre - fecha.pdf"
-            const suggestedFileName = `${numeroCompleto} - ${nombre} - ${fechaDDMMYYYY}.pdf`;
-            
-            const fileHandle = await window.showSaveFilePicker({
-                suggestedName: suggestedFileName,
-                types: [{
-                    description: 'Archivos PDF',
-                    accept: { 'application/pdf': ['.pdf'] },
-                }],
-            });
-            const writableStream = await fileHandle.createWritable();
-            await writableStream.write(pdfBlob);
-            await writableStream.close();
-            console.log('PDF guardado en la ubicación elegida por el usuario.');
+          const pdfBlob = doc.output("blob");
+          // Nuevo nombre del archivo: "numero de recibo - nombre - fecha.pdf"
+          const suggestedFileName = `${numeroCompleto} - ${nombre} - ${fechaDDMMYYYY}.pdf`;
+
+          const fileHandle = await window.showSaveFilePicker({
+            suggestedName: suggestedFileName,
+            types: [
+              {
+                description: "Archivos PDF",
+                accept: { "application/pdf": [".pdf"] },
+              },
+            ],
+          });
+          const writableStream = await fileHandle.createWritable();
+          await writableStream.write(pdfBlob);
+          await writableStream.close();
+          console.log("PDF guardado en la ubicación elegida por el usuario.");
         } catch (error) {
-            if (error.name === 'AbortError') {
-                console.log('Guardado de PDF cancelado por el usuario.');
-            } else {
-                console.error('Error al guardar el PDF:', error);
-                alert('No se pudo guardar el PDF. ¿Quizás el navegador no soporta la selección de carpeta o el usuario canceló la operación?');
-            }
+          if (error.name === "AbortError") {
+            console.log("Guardado de PDF cancelado por el usuario.");
+          } else {
+            console.error("Error al guardar el PDF:", error);
+            alert(
+              "No se pudo guardar el PDF. ¿Quizás el navegador no soporta la selección de carpeta o el usuario canceló la operación?"
+            );
+          }
         }
       }
 
@@ -531,7 +613,20 @@
       }
 
       async function generarReciboIndividual(doc, options) {
-        const { x, y, width, height, nombre, monto, motivo, fechaEnPalabras, numeroRecibo, esCopia, fecha } = options;
+        const {
+          x,
+          y,
+          width,
+          height,
+          nombre,
+          monto,
+          motivo,
+          fechaEnPalabras,
+          numeroRecibo,
+          esCopia,
+          fecha,
+          firmaTexto, // Recibimos el texto de la firma
+        } = options;
 
         // Estilo del recibo
         doc.setDrawColor(233, 30, 99);
@@ -551,129 +646,149 @@
 
         const logoIzqData = localStorage.getItem("logoIzquierdo");
         const logoDerData = localStorage.getItem("logoDerecho");
+        const firmaData = localStorage.getItem("firma"); // Obtener datos de la firma
 
         // Calcular dimensiones para logo izquierdo
         if (logoIzqData) {
-            const dims = await getNaturalImageDimensions(logoIzqData);
-            if (dims.width > 0 && dims.height > 0) {
-                const ratio = dims.width / dims.height;
-                logoHeightIzq = logoMaxHeightPdf;
-                logoWidthIzq = logoHeightIzq * ratio;
-                if (logoWidthIzq > logoMaxWidthIzqPdf) {
-                    logoWidthIzq = logoMaxWidthIzqPdf;
-                    logoHeightIzq = logoWidthIzq / ratio;
-                }
+          const dims = await getNaturalImageDimensions(logoIzqData);
+          if (dims.width > 0 && dims.height > 0) {
+            const ratio = dims.width / dims.height;
+            logoHeightIzq = logoMaxHeightPdf;
+            logoWidthIzq = logoHeightIzq * ratio;
+            if (logoWidthIzq > logoMaxWidthIzqPdf) {
+              logoWidthIzq = logoMaxWidthIzqPdf;
+              logoHeightIzq = logoWidthIzq / ratio;
             }
+          }
         }
 
         // Calcular dimensiones para logo derecho
         if (logoDerData) {
-            const dims = await getNaturalImageDimensions(logoDerData);
-            if (dims.width > 0 && dims.height > 0) {
-                const ratio = dims.width / dims.height;
-                logoHeightDer = logoMaxHeightPdf;
-                logoWidthDer = logoHeightDer * ratio;
-                if (logoWidthDer > logoMaxWidthDerPdf) {
-                    logoWidthDer = logoMaxWidthDerPdf;
-                    logoHeightDer = logoWidthDer / ratio;
-                }
+          const dims = await getNaturalImageDimensions(logoDerData);
+          if (dims.width > 0 && dims.height > 0) {
+            const ratio = dims.width / dims.height;
+            logoHeightDer = logoMaxHeightPdf;
+            logoWidthDer = logoHeightDer * ratio;
+            if (logoWidthDer > logoMaxWidthDerPdf) {
+              logoWidthDer = logoMaxWidthDerPdf;
+              logoHeightDer = logoWidthDer / ratio;
             }
+          }
         }
 
         // Determinar la altura máxima de los logos para centrado y posición
         const actualLogoHeight = Math.max(logoHeightIzq, logoHeightDer);
-        
+
         // La altura total del bloque superior (logos + título)
         const titleTextHeight = 16 + 13 + 3; // Altura aproximada de "Asamblea Jerovia N°9" (16pt) + espacio + "RECIBO OFICIAL" (13pt)
         const topBlockTotalHeight = Math.max(actualLogoHeight, titleTextHeight);
 
         // Centro vertical del bloque superior, ligeramente más arriba
-        const centerOfTopBlockY = y + marginInterno + (topBlockTotalHeight / 2) - 3; // Mover 3mm más arriba
+        const centerOfTopBlockY = y + marginInterno + topBlockTotalHeight / 2 - 3; // Mover 3mm más arriba
 
         // Dibujar logo izquierdo
         if (logoIzqData && logoWidthIzq > 0 && logoHeightIzq > 0) {
-            const logoLeftX = x + marginInterno;
-            const logoLeftY = centerOfTopBlockY - (logoHeightIzq / 2);
-            doc.addImage(
-                logoIzqData,
-                logoIzqData.startsWith('data:image/png') ? "PNG" : "JPEG",
-                logoLeftX,
-                logoLeftY,
-                logoWidthIzq,
-                logoHeightIzq,
-                undefined,
-                "FAST"
-            );
+          const logoLeftX = x + marginInterno;
+          const logoLeftY = centerOfTopBlockY - logoHeightIzq / 2;
+          doc.addImage(
+            logoIzqData,
+            logoIzqData.startsWith("data:image/png") ? "PNG" : "JPEG",
+            logoLeftX,
+            logoLeftY,
+            logoWidthIzq,
+            logoHeightIzq,
+            undefined,
+            "FAST"
+          );
         }
 
         // Dibujar logo derecho
         if (logoDerData && logoWidthDer > 0 && logoHeightDer > 0) {
-            const logoRightX = x + width - marginInterno - logoWidthDer;
-            const logoRightY = centerOfTopBlockY - (logoHeightDer / 2);
-            doc.addImage(
-                logoDerData,
-                logoDerData.startsWith('data:image/png') ? "PNG" : "JPEG",
-                logoRightX,
-                logoRightY,
-                logoWidthDer,
-                logoHeightDer,
-                undefined,
-                "FAST"
-            );
+          const logoRightX = x + width - marginInterno - logoWidthDer;
+          const logoRightY = centerOfTopBlockY - logoHeightDer / 2;
+          doc.addImage(
+            logoDerData,
+            logoDerData.startsWith("data:image/png") ? "PNG" : "JPEG",
+            logoRightX,
+            logoRightY,
+            logoWidthDer,
+            logoHeightDer,
+            undefined,
+            "FAST"
+          );
         }
 
         // Título principal: Dividido en dos líneas y centrado entre logos
         const titleCenterX = x + width / 2;
-        const titleLine1Y = centerOfTopBlockY - (titleTextHeight / 2) + (16 / 2) - 1; // Ajuste para el centro vertical
+        const titleLine1Y = centerOfTopBlockY - titleTextHeight / 2 + 16 / 2 - 1; // Ajuste para el centro vertical
         const titleLine2Y = titleLine1Y + 8; // Espacio de 8mm entre líneas
 
         doc.setFont(undefined, "bold");
         doc.setTextColor(233, 30, 99);
 
         doc.setFontSize(16); // Tamaño para "Asamblea Jerovia N°9"
-        doc.text("Asamblea Jerovia N°9", titleCenterX, titleLine1Y, { align: "center" });
+        doc.text("Asamblea Jerovia N°9", titleCenterX, titleLine1Y, {
+          align: "center",
+        });
 
         doc.setFontSize(13); // Tamaño para "RECIBO OFICIAL"
         doc.setFont(undefined, "normal"); // Volver a normal para la segunda línea
-        doc.text("RECIBO OFICIAL", titleCenterX, titleLine2Y, { align: "center" });
+        doc.text("RECIBO OFICIAL", titleCenterX, titleLine2Y, {
+          align: "center",
+        });
 
         // Posición del número de recibo y fecha
         doc.setFontSize(12);
         doc.setTextColor(0, 0, 0);
         doc.setFont(undefined, "normal");
 
-        // Número de recibo: Inmediatamente debajo del logo izquierdo
-        // Se calcula después de dibujar el logo, usando la altura real del logo izquierdo
-        const numReciboY = (logoIzqData && logoHeightIzq > 0) ? (centerOfTopBlockY + (logoHeightIzq / 2) + 5) : (y + marginInterno + topBlockTotalHeight + 5);
-        doc.text(numeroRecibo, x + marginInterno, numReciboY, { align: "left" });
+        // Número de recibo: Inmediatamente debajo del bloque superior (logos + títulos)
+        const numReciboY = y + marginInterno + topBlockTotalHeight + 5;
+        doc.text(numeroRecibo, x + marginInterno, numReciboY, {
+          align: "left",
+        });
 
         // Fecha: Ligeramente más abajo que el número de recibo, alineada a la derecha
         const fechaY = numReciboY + 5; // 5mm más abajo que el número de recibo
-        doc.text(fecha, x + width - marginInterno, fechaY, { align: "right" });
+        doc.text(fecha, x + width - marginInterno, fechaY, {
+          align: "right",
+        });
 
-        // Contenido
+        // --- Contenido del Recibo (Texto) ---
         const contenidoX = x + marginInterno;
         const contenidoWidth = width - marginInterno * 2;
-        const currentContentY = fechaY + 10; // Empieza debajo de la fecha
-        const firmaSpaceHeight = 35; // Espacio para firma y "Tesorera"
-        const maxContentHeight = (y + height - marginInterno - firmaSpaceHeight) - currentContentY; // Altura máxima disponible para el texto
-
         const textoContenido = `En fecha ${fechaEnPalabras} la asamblea Jerovia N°9 recibe de ${nombre} la suma de Gs. ${monto} en concepto de ${motivo}.`;
 
+        // Posición y dimensiones para la firma
+        const firmaMaxWidth = 50; // Ancho máximo para la firma (mm)
+        const firmaMaxHeight = 20; // Alto máximo para la firma (mm)
+        const firmaLineHeight = 0.5; // Grosor de la línea de firma
+        const firmaTextoLineHeight = 5; // Espacio para el texto de la firma
+        const firmaBlockHeight = (firmaData ? firmaMaxHeight : firmaLineHeight) + firmaTextoLineHeight + 5; // Altura total del bloque de firma (imagen o línea + texto)
+        const firmaBaseY = y + height - marginInterno - firmaTextoLineHeight - 5; // Posición base para el texto/línea de la firma
+
+        const firmaX = x + width - marginInterno - firmaMaxWidth; // Alineado a la derecha del recibo
+
+        // Calcular el espacio disponible para el contenido entre la fecha y la firma
+        const topContentBoundary = fechaY + 5; // Un poco de espacio debajo de la fecha
+        const bottomContentBoundary = firmaBaseY - 5; // Un poco de espacio por encima de la firma
+        const maxContentHeight = bottomContentBoundary - topContentBoundary;
+
         let fontSize = 14; // Tamaño de fuente inicial
-        let lineHeight = 9; // Espacio entre líneas inicial
+        let lineHeightRatio = 1.3; // Relación de interlineado (ej. 1.3 para 14pt * 1.3 = 18.2mm)
         let lineas = [];
         let totalTextoHeight = 0;
         const minFontSize = 8; // Tamaño mínimo de fuente para evitar texto ilegible
 
-        // Bucle para ajustar el tamaño de la fuente
+        // Bucle para ajustar el tamaño de la fuente y el interlineado si el texto es demasiado largo
         do {
             doc.setFontSize(fontSize);
             lineas = doc.splitTextToSize(textoContenido, contenidoWidth);
-            totalTextoHeight = lineas.length * lineHeight;
+            totalTextoHeight = lineas.length * (fontSize * lineHeightRatio);
+
             if (totalTextoHeight > maxContentHeight && fontSize > minFontSize) {
                 fontSize -= 0.5; // Reducir en 0.5pt si el texto es demasiado largo
-                lineHeight = fontSize * (9/14); // Ajustar el lineHeight proporcionalmente
+                lineHeightRatio = Math.max(1.1, lineHeightRatio * 0.95); // Ajustar el interlineado, con un mínimo de 1.1 para no amontonar
             } else {
                 break; // El texto cabe o se alcanzó el tamaño mínimo de fuente
             }
@@ -682,71 +797,75 @@
         doc.setFont(undefined, "normal");
         doc.setTextColor(0, 0, 0);
 
-        // Contenido justificado y verticalmente centrado
-        const startYContenido = currentContentY + (maxContentHeight - totalTextoHeight) / 2;
+        // Calcular la posición inicial Y para centrar verticalmente el contenido
+        const startYContenido = topContentBoundary + (maxContentHeight - totalTextoHeight) / 2;
 
         for (let i = 0; i < lineas.length; i++) {
-          doc.text(lineas[i], contenidoX, startYContenido + i * lineHeight, { maxWidth: contenidoWidth, align: "justify" });
+          doc.text(
+            lineas[i],
+            contenidoX,
+            startYContenido + i * (fontSize * lineHeightRatio),
+            { maxWidth: contenidoWidth, align: "justify" }
+          );
         }
 
-        // Firma y Tesorera
-        const firmaMaxWidth = 50; // Ancho máximo para la firma (mm)
-        const firmaMaxHeight = 20; // Alto máximo para la firma (mm)
-        const firmaBaseY = y + height - marginInterno - 10; // Posición base para la línea/imagen de la firma (más abajo, cerca del margen)
+        // --- Firma (imagen o línea) y texto de la firma ---
+        if (firmaData) {
+          const dims = await getNaturalImageDimensions(firmaData);
+          if (dims.width > 0 && dims.height > 0) {
+            const ratio = dims.width / dims.height;
+            let firmaDisplayHeight = firmaMaxHeight;
+            let firmaDisplayWidth = firmaDisplayHeight * ratio;
 
-        const firmaX = x + width - marginInterno - firmaMaxWidth; // Alineado a la derecha, casi tocando el margen
-
-        if (localStorage.getItem("firma")) {
-            const firmaData = localStorage.getItem("firma");
-            const dims = await getNaturalImageDimensions(firmaData);
-            if (dims.width > 0 && dims.height > 0) {
-                const ratio = dims.width / dims.height;
-                let firmaDisplayHeight = firmaMaxHeight;
-                let firmaDisplayWidth = firmaDisplayHeight * ratio;
-
-                if (firmaDisplayWidth > firmaMaxWidth) {
-                    firmaDisplayWidth = firmaMaxWidth;
-                    firmaDisplayHeight = firmaDisplayWidth / ratio;
-                }
-                const imgPosX = firmaX + (firmaMaxWidth - firmaDisplayWidth) / 2;
-                const imgPosY = firmaBaseY - firmaDisplayHeight; // Ajuste para que la firma quede por encima de la línea imaginaria
-
-                doc.addImage(
-                    firmaData,
-                    firmaData.startsWith('data:image/png') ? "PNG" : "JPEG",
-                    imgPosX,
-                    imgPosY,
-                    firmaDisplayWidth,
-                    firmaDisplayHeight,
-                    undefined,
-                    "FAST"
-                );
+            if (firmaDisplayWidth > firmaMaxWidth) {
+              firmaDisplayWidth = firmaMaxWidth;
+              firmaDisplayHeight = firmaDisplayWidth / ratio;
             }
+            const imgPosX = firmaX + (firmaMaxWidth - firmaDisplayWidth) / 2;
+            const imgPosY = firmaBaseY - firmaDisplayHeight - 2; // Ajuste para que la firma quede un poco por encima de la línea imaginaria del texto
+
+            doc.addImage(
+              firmaData,
+              firmaData.startsWith("data:image/png") ? "PNG" : "JPEG",
+              imgPosX,
+              imgPosY,
+              firmaDisplayWidth,
+              firmaDisplayHeight,
+              undefined,
+              "FAST"
+            );
+          }
         } else {
-            doc.setDrawColor(0, 0, 0);
-            doc.setLineWidth(0.5);
-            doc.line(firmaX, firmaBaseY, firmaX + firmaMaxWidth, firmaBaseY);
+          doc.setDrawColor(0, 0, 0);
+          doc.setLineWidth(0.5);
+          doc.line(firmaX, firmaBaseY, firmaX + firmaMaxWidth, firmaBaseY); // Línea de firma
         }
 
         doc.setFontSize(12);
         doc.setFont(undefined, "normal");
-        doc.text("Tesorera", firmaX + firmaMaxWidth / 2, firmaBaseY + 5, { align: "center" });
+        doc.text(firmaTexto, firmaX + firmaMaxWidth / 2, firmaBaseY + firmaTextoLineHeight, {
+          align: "center",
+        });
 
         // Marca de agua para copia centrada
         if (esCopia) {
           const copiaText = "COPIA";
-          const fontSize = 80;
+          const fontSizeCopia = 80;
           const copiaOpacity = 0.12;
           const centerX = x + width / 2;
           const centerY = y + height / 2 - 15; // Un poco más arriba
 
           doc.setTextColor(150, 150, 150);
-          doc.setFontSize(fontSize);
+          doc.setFontSize(fontSizeCopia);
           doc.setFont(undefined, "bold");
           doc.setGState(new doc.GState({ opacity: copiaOpacity }));
 
           doc.saveGraphicsState();
-          doc.text(copiaText, centerX, centerY, { align: "center", baseline: "middle", angle: -45 });
+          doc.text(copiaText, centerX, centerY, {
+            align: "center",
+            baseline: "middle",
+            angle: -45,
+          });
           doc.restoreGraphicsState();
 
           doc.setGState(new doc.GState({ opacity: 1 }));
@@ -755,4 +874,4 @@
       }
     </script>
   </body>
-</html> 
+</html>
