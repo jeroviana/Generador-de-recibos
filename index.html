@@ -15,6 +15,10 @@
         --color-secundario: #f8bbd0;
         --color-fondo: #fff5f7;
         --color-texto: #333;
+        --color-rosa-claro: #fce4ec; /* Nuevo color para el recuadro de firma temporal */
+        --color-botones-rosa: #f06292; /* Rosa un poco más claro para los botones */
+        --color-rojo-boton: #f44336; /* Rojo para el botón sin firma */
+        --color-verde-boton: #4caf50; /* Verde para el botón Generar Recibo */
       }
 
       body {
@@ -79,6 +83,34 @@
       button:hover {
         background: #c2185b;
         transform: translateY(-2px);
+      }
+
+      /* Estilos para los nuevos botones */
+      #btn-firma-autoridad,
+      #btn-recibo-sin-firma {
+        background-color: var(--color-botones-rosa);
+      }
+
+      #btn-firma-autoridad:hover {
+        background-color: #e91e63; /* Más oscuro al pasar el ratón */
+      }
+
+      #btn-recibo-sin-firma {
+        background-color: var(--color-rojo-boton);
+      }
+
+      #btn-recibo-sin-firma:hover {
+        background-color: #d32f2f; /* Más oscuro al pasar el ratón */
+      }
+
+      #btn-generar {
+        background-color: var(--color-verde-boton);
+        font-size: 18px; /* Más llamativo */
+        padding: 15px 25px;
+      }
+
+      #btn-generar:hover {
+        background-color: #388e3c; /* Más oscuro al pasar el ratón */
       }
 
       .logo-preview {
@@ -188,6 +220,60 @@
         gap: 5px;
         margin-bottom: 10px;
       }
+
+      .custom-option-container {
+        background-color: var(--color-rosa-claro);
+        padding: 15px;
+        border-radius: 8px;
+        margin-top: 15px;
+        border: 1px dashed var(--color-primario);
+        display: none; /* Oculto por defecto */
+        flex-direction: column;
+        gap: 10px;
+        align-items: center; /* Centra los elementos internos */
+        text-align: center;
+      }
+
+      .custom-option-container p {
+        margin: 0;
+        font-weight: bold;
+        color: var(--color-primario);
+      }
+
+      .custom-option-container img {
+        max-width: 150px;
+        max-height: 60px;
+        object-fit: contain;
+        border: 1px dashed #ccc;
+        margin-top: 5px;
+        display: none;
+      }
+
+      .custom-option-container .remove-btn {
+        position: static; /* Para que no flote y se alinee en el flexbox */
+        margin-left: auto;
+        margin-right: auto;
+        display: none;
+      }
+
+      .custom-option-container input[type="text"] {
+        width: calc(100% - 20px); /* Ajuste de ancho */
+        max-width: 300px;
+        margin: 0 auto;
+        text-align: center;
+      }
+
+      .custom-option-container button {
+        background-color: var(--color-botones-rosa);
+      }
+      .custom-option-container button:hover {
+        background-color: #e91e63;
+      }
+
+      .divider-line {
+        border-top: 1px dashed #ccc;
+        margin: 20px 0;
+      }
     </style>
   </head>
   <body>
@@ -256,7 +342,38 @@
         </div>
       </div>
 
+      <div class="divider-line"></div>
+
       <div class="button-group">
+        <button type="button" id="btn-firma-autoridad">
+          Recibo firmado por una autoridad
+        </button>
+        <div id="firma-autoridad-container" class="custom-option-container">
+          <p>Firma temporal para este recibo</p>
+          <button type="button" id="btn-firma-temporal">
+            Subir Firma Temporal
+          </button>
+          <img id="preview-firma-temporal" alt="Firma temporal" />
+          <button class="remove-btn" id="remove-firma-temporal">×</button>
+          <input
+            type="text"
+            id="cargo-firma-temporal"
+            placeholder="Ingrese el cargo de quien firma este documento, evita utilizar sufijos el/la o nombres propios"
+          />
+        </div>
+
+        <button type="button" id="btn-recibo-sin-firma">
+          Recibo sin firma virtual
+        </button>
+        <div id="recibo-sin-firma-container" class="custom-option-container">
+          <p>Este recibo se generará sin imagen de firma</p>
+          <input
+            type="text"
+            id="cargo-firma-manual"
+            placeholder="Ingrese el cargo de quien firmará presencialmente (opcional)"
+          />
+        </div>
+
         <button type="button" id="btn-generar">Generar Recibo</button>
       </div>
     </div>
@@ -268,7 +385,9 @@
       // Helper para convertir número a formato de moneda con puntos y comas
       function formatMonto(monto) {
         // Asegurarse de que el monto sea un número antes de formatear
-        const numMonto = parseFloat(monto.replace(/\./g, "").replace(",", ".")); // Eliminar puntos y cambiar coma por punto si existe
+        const numMonto = parseFloat(
+          monto.replace(/\./g, "").replace(",", ".")
+        ); // Eliminar puntos y cambiar coma por punto si existe
         if (isNaN(numMonto)) {
           return monto; // Devolver el monto original si no es un número válido
         }
@@ -306,11 +425,27 @@
 
       // Variable global para almacenar el nombre/cargo de la firma cuando no hay imagen
       let firmaTextoPersonalizado = "";
+      // Variables para la firma temporal
+      let firmaTemporalData = null;
+      let cargoFirmaTemporal = "";
+
+      // Variable para la firma manual (sin imagen)
+      let cargoFirmaManual = "";
+      let isReciboSinFirma = false; // Estado para saber si se generará sin firma virtual
+
+      // Constantes para las claves de localStorage
+      const STORAGE_KEYS = {
+        LOGO_IZQUIERDO: "logoIzquierdo",
+        LOGO_DERECHO: "logoDerecho",
+        FIRMA_GUARDADA: "firma", // Renombrado para evitar conflicto con firmaTemporalData
+        NUMERO_RECIBO: "numeroRecibo",
+        FIRMA_TEXTO_PERSONALIZADO: "firmaTextoPersonalizado",
+      };
 
       // Inicialización
       document.addEventListener("DOMContentLoaded", function () {
         // Cargar número de recibo persistente
-        const savedNumero = localStorage.getItem("numeroRecibo");
+        const savedNumero = localStorage.getItem(STORAGE_KEYS.NUMERO_RECIBO);
         const initialNumero = savedNumero ? parseInt(savedNumero) : 1;
         document.getElementById("numero-recibo").value = initialNumero;
 
@@ -323,19 +458,25 @@
 
         // Cargar imágenes guardadas
         cargarImagenGuardada(
-          "logoIzquierdo",
+          STORAGE_KEYS.LOGO_IZQUIERDO,
           "preview-logo-izq",
           "remove-logo-izq"
         );
         cargarImagenGuardada(
-          "logoDerecho",
+          STORAGE_KEYS.LOGO_DERECHO,
           "preview-logo-der",
           "remove-logo-der"
         );
-        cargarImagenGuardada("firma", "preview-firma", "remove-firma");
+        cargarImagenGuardada(
+          STORAGE_KEYS.FIRMA_GUARDADA,
+          "preview-firma",
+          "remove-firma"
+        );
 
         // Cargar texto de firma personalizado (si existe)
-        const savedFirmaTexto = localStorage.getItem("firmaTextoPersonalizado");
+        const savedFirmaTexto = localStorage.getItem(
+          STORAGE_KEYS.FIRMA_TEXTO_PERSONALIZADO
+        );
         if (savedFirmaTexto) {
           firmaTextoPersonalizado = savedFirmaTexto;
         }
@@ -344,36 +485,142 @@
         document
           .getElementById("btn-logo-izq")
           .addEventListener("click", function () {
-            seleccionarImagen("logoIzquierdo", "preview-logo-izq", "remove-logo-izq");
+            seleccionarImagen(
+              STORAGE_KEYS.LOGO_IZQUIERDO,
+              "preview-logo-izq",
+              "remove-logo-izq"
+            );
           });
 
         document
           .getElementById("btn-logo-der")
           .addEventListener("click", function () {
-            seleccionarImagen("logoDerecho", "preview-logo-der", "remove-logo-der");
+            seleccionarImagen(
+              STORAGE_KEYS.LOGO_DERECHO,
+              "preview-logo-der",
+              "remove-logo-der"
+            );
           });
 
         document.getElementById("btn-firma").addEventListener("click", function () {
-          seleccionarImagen("firma", "preview-firma", "remove-firma");
+          seleccionarImagen(
+            STORAGE_KEYS.FIRMA_GUARDADA,
+            "preview-firma",
+            "remove-firma"
+          );
         });
 
         document
           .getElementById("remove-logo-izq")
           .addEventListener("click", function () {
-            eliminarImagen("logoIzquierdo", "preview-logo-izq", "remove-logo-izq");
+            eliminarImagen(
+              STORAGE_KEYS.LOGO_IZQUIERDO,
+              "preview-logo-izq",
+              "remove-logo-izq"
+            );
           });
 
         document
           .getElementById("remove-logo-der")
           .addEventListener("click", function () {
-            eliminarImagen("logoDerecho", "preview-logo-der", "remove-logo-der");
+            eliminarImagen(
+              STORAGE_KEYS.LOGO_DERECHO,
+              "preview-logo-der",
+              "remove-logo-der"
+            );
           });
 
         document.getElementById("remove-firma").addEventListener("click", function () {
-            eliminarImagen("firma", "preview-firma", "remove-firma");
-            // También borrar el texto de firma personalizado si se elimina la imagen
-            firmaTextoPersonalizado = "";
-            localStorage.removeItem("firmaTextoPersonalizado");
+          eliminarImagen(
+            STORAGE_KEYS.FIRMA_GUARDADA,
+            "preview-firma",
+            "remove-firma"
+          );
+          // También borrar el texto de firma personalizado si se elimina la imagen
+          firmaTextoPersonalizado = "";
+          localStorage.removeItem(STORAGE_KEYS.FIRMA_TEXTO_PERSONALIZADO);
+        });
+
+        // --- Nuevos listeners para las opciones de firma ---
+        const firmaAutoridadContainer = document.getElementById(
+          "firma-autoridad-container"
+        );
+        const reciboSinFirmaContainer = document.getElementById(
+          "recibo-sin-firma-container"
+        );
+        const cargoFirmaTemporalInput = document.getElementById(
+          "cargo-firma-temporal"
+        );
+        const cargoFirmaManualInput = document.getElementById(
+          "cargo-firma-manual"
+        );
+
+        document
+          .getElementById("btn-firma-autoridad")
+          .addEventListener("click", function () {
+            firmaAutoridadContainer.style.display = "flex";
+            reciboSinFirmaContainer.style.display = "none";
+            isReciboSinFirma = false; // Desactiva el modo sin firma
+            cargoFirmaManual = ""; // Limpia el cargo de firma manual
+            cargoFirmaManualInput.value = ""; // Limpiar el input
+
+            // Si hay firma temporal guardada, cargarla
+            if (firmaTemporalData) {
+              document.getElementById("preview-firma-temporal").src =
+                firmaTemporalData;
+              document.getElementById("preview-firma-temporal").style.display =
+                "block";
+              document.getElementById("remove-firma-temporal").style.display =
+                "block";
+            } else {
+              document.getElementById("preview-firma-temporal").style.display =
+                "none";
+              document.getElementById("remove-firma-temporal").style.display =
+                "none";
+            }
+            cargoFirmaTemporalInput.value = cargoFirmaTemporal;
+          });
+
+        document
+          .getElementById("btn-recibo-sin-firma")
+          .addEventListener("click", function () {
+            reciboSinFirmaContainer.style.display = "flex";
+            firmaAutoridadContainer.style.display = "none";
+            isReciboSinFirma = true; // Activa el modo sin firma
+            firmaTemporalData = null; // Limpia la firma temporal
+            cargoFirmaTemporal = ""; // Limpia el cargo de firma temporal
+            document.getElementById("preview-firma-temporal").style.display =
+              "none"; // Ocultar preview
+            document.getElementById("remove-firma-temporal").style.display =
+              "none"; // Ocultar botón de remover
+            cargoFirmaTemporalInput.value = ""; // Limpiar el input
+            cargoFirmaManualInput.value = cargoFirmaManual; // Restaurar el cargo manual si había
+          });
+
+        document
+          .getElementById("btn-firma-temporal")
+          .addEventListener("click", function () {
+            seleccionarImagenTemporal(
+              "preview-firma-temporal",
+              "remove-firma-temporal"
+            );
+          });
+
+        document
+          .getElementById("remove-firma-temporal")
+          .addEventListener("click", function () {
+            eliminarImagenTemporal(
+              "preview-firma-temporal",
+              "remove-firma-temporal"
+            );
+          });
+
+        cargoFirmaTemporalInput.addEventListener("input", function () {
+          cargoFirmaTemporal = this.value.trim();
+        });
+
+        cargoFirmaManualInput.addEventListener("input", function () {
+          cargoFirmaManual = this.value.trim();
         });
 
         // Configurar generación de recibo (AHORA ES ASÍNCRONA)
@@ -384,12 +631,16 @@
           });
 
         // Configurar auto-incremento
-        document.getElementById("auto-numero").addEventListener("change", function () {
-          if (this.checked) {
-            const currentNum = parseInt(document.getElementById("numero-recibo").value);
-            localStorage.setItem("numeroRecibo", currentNum.toString());
-          }
-        });
+        document
+          .getElementById("auto-numero")
+          .addEventListener("change", function () {
+            if (this.checked) {
+              const currentNum = parseInt(
+                document.getElementById("numero-recibo").value
+              );
+              localStorage.setItem(STORAGE_KEYS.NUMERO_RECIBO, currentNum.toString());
+            }
+          });
       });
 
       function cargarImagenGuardada(tipo, previewId, removeBtnId) {
@@ -418,10 +669,25 @@
             preview.src = event.target.result;
             preview.style.display = "block";
             document.getElementById(removeBtnId).style.display = "block";
-            // Si se selecciona una firma, borrar el texto personalizado
-            if (tipo === "firma") {
-                firmaTextoPersonalizado = "";
-                localStorage.removeItem("firmaTextoPersonalizado");
+            // Si se selecciona una firma, borrar el texto personalizado y resetear opciones temporales
+            if (tipo === STORAGE_KEYS.FIRMA_GUARDADA) {
+              firmaTextoPersonalizado = "";
+              localStorage.removeItem(STORAGE_KEYS.FIRMA_TEXTO_PERSONALIZADO);
+              // Desactivar y ocultar opciones de firma temporal/sin firma
+              firmaTemporalData = null;
+              cargoFirmaTemporal = "";
+              isReciboSinFirma = false;
+              cargoFirmaManual = "";
+              document.getElementById("firma-autoridad-container").style.display =
+                "none";
+              document.getElementById("recibo-sin-firma-container").style.display =
+                "none";
+              document.getElementById("preview-firma-temporal").style.display =
+                "none";
+              document.getElementById("remove-firma-temporal").style.display =
+                "none";
+              document.getElementById("cargo-firma-temporal").value = "";
+              document.getElementById("cargo-firma-manual").value = "";
             }
           };
           reader.readAsDataURL(file);
@@ -435,10 +701,47 @@
         document.getElementById(previewId).style.display = "none";
         document.getElementById(removeBtnId).style.display = "none";
         // Si se elimina la firma, limpiar el texto personalizado
-        if (tipo === "firma") {
-            firmaTextoPersonalizado = "";
-            localStorage.removeItem("firmaTextoPersonalizado");
+        if (tipo === STORAGE_KEYS.FIRMA_GUARDADA) {
+          firmaTextoPersonalizado = "";
+          localStorage.removeItem(STORAGE_KEYS.FIRMA_TEXTO_PERSONALIZADO);
         }
+      }
+
+      // Funciones para la firma temporal
+      function seleccionarImagenTemporal(previewId, removeBtnId) {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "image/*";
+
+        input.onchange = function (e) {
+          const file = e.target.files[0];
+          if (!file) return;
+
+          const reader = new FileReader();
+          reader.onload = function (event) {
+            firmaTemporalData = event.target.result; // No guardar en localStorage
+            const preview = document.getElementById(previewId);
+            preview.src = event.target.result;
+            preview.style.display = "block";
+            document.getElementById(removeBtnId).style.display = "block";
+            // Asegurarse de que la firma guardada no se use si hay temporal
+            eliminarImagen(
+              STORAGE_KEYS.FIRMA_GUARDADA,
+              "preview-firma",
+              "remove-firma"
+            ); // Eliminar la firma guardada
+          };
+          reader.readAsDataURL(file);
+        };
+        input.click();
+      }
+
+      function eliminarImagenTemporal(previewId, removeBtnId) {
+        firmaTemporalData = null; // Eliminar la firma temporal
+        document.getElementById(previewId).style.display = "none";
+        document.getElementById(removeBtnId).style.display = "none";
+        document.getElementById("cargo-firma-temporal").value = ""; // Limpiar el cargo
+        cargoFirmaTemporal = "";
       }
 
       async function generarRecibo() {
@@ -457,39 +760,47 @@
           return;
         }
 
-        // --- Lógica de la firma ---
-        const firmaData = localStorage.getItem("firma");
-        let firmaDisplayTexto = "Tesorera"; // Valor por defecto si no hay imagen ni texto personalizado
+        // --- Lógica de la firma principal ---
+        let firmaDataParaPDF = null;
+        let firmaTextoParaPDF = "Tesorera"; // Valor por defecto
 
-        if (!firmaData) {
-            // No hay imagen de firma
+        if (isReciboSinFirma) {
+          // Opción "Recibo sin firma virtual" seleccionada
+          firmaDataParaPDF = null; // No hay imagen de firma
+          firmaTextoParaPDF = cargoFirmaManual || "Tesorera"; // Usar el cargo manual o Tesorera
+        } else if (firmaTemporalData) {
+          // Opción "Recibo firmado por una autoridad" seleccionada con imagen temporal
+          firmaDataParaPDF = firmaTemporalData;
+          firmaTextoParaPDF = cargoFirmaTemporal || "Autoridad Firmante"; // Usar cargo temporal o Autoridad Firmante
+        } else {
+          // Usar la firma guardada o el texto personalizado si no hay imagen
+          firmaDataParaPDF = localStorage.getItem(STORAGE_KEYS.FIRMA_GUARDADA);
+          if (firmaDataParaPDF) {
+            firmaTextoParaPDF = "Tesorera"; // Por defecto si hay imagen guardada
+          } else {
+            // Si no hay imagen guardada y no se usaron las nuevas opciones, preguntar por el texto
             let confirmacionSinFirma = confirm("No se ha seleccionado firma ¿esto es correcto?");
             if (!confirmacionSinFirma) {
-                // Si el usuario elige "No", detiene la generación para que corrija
-                return;
+              return;
             } else {
-                // Si el usuario elige "Sí", pide el nombre/cargo para la firma
-                let textoIngresado = prompt(
-                    "¿Quién debe firmar este documento?\n\nFavor completar este campo sin agregar sufijos (el/la), en lo posible solo especificar su cargo:",
-                    firmaTextoPersonalizado || "" // Usar valor guardado o vacío
+              let textoIngresado = prompt(
+                "¿Quién debe firmar este documento?\n\nFavor completar este campo sin agregar sufijos (el/la), en lo posible solo especificar su cargo:",
+                firmaTextoPersonalizado || ""
+              );
+              if (textoIngresado !== null) {
+                firmaTextoPersonalizado = textoIngresado.trim() || "Tesorera";
+                localStorage.setItem(
+                  STORAGE_KEYS.FIRMA_TEXTO_PERSONALIZADO,
+                  firmaTextoPersonalizado
                 );
-
-                if (textoIngresado !== null) { // Si el usuario no cancela el prompt
-                    firmaTextoPersonalizado = textoIngresado.trim() || "Tesorera"; // Si lo deja vacío, usa "Tesorera"
-                    localStorage.setItem("firmaTextoPersonalizado", firmaTextoPersonalizado);
-                } else {
-                    // Si el usuario cancela el segundo prompt, se mantiene el valor actual de firmaTextoPersonalizado
-                    firmaTextoPersonalizado = firmaTextoPersonalizado || "Tesorera";
-                }
-                firmaDisplayTexto = firmaTextoPersonalizado;
+              } else {
+                firmaTextoPersonalizado = firmaTextoPersonalizado || "Tesorera";
+              }
+              firmaTextoParaPDF = firmaTextoPersonalizado;
             }
-        } else {
-            // Si hay firma cargada, asegurarse de que no haya texto personalizado guardado
-            firmaTextoPersonalizado = "";
-            localStorage.removeItem("firmaTextoPersonalizado");
+          }
         }
         // --- Fin Lógica de la firma ---
-
 
         // Formatear monto y fecha para el contenido
         const montoFormateado = formatMonto(monto);
@@ -503,7 +814,7 @@
         if (autoIncrementar) {
           numeroRecibo++;
           numeroReciboInput.value = numeroRecibo;
-          localStorage.setItem("numeroRecibo", numeroRecibo.toString());
+          localStorage.setItem(STORAGE_KEYS.NUMERO_RECIBO, numeroRecibo.toString());
         }
 
         // Crear PDF
@@ -535,7 +846,9 @@
           fechaEnPalabras,
           numeroRecibo: numeroCompleto,
           esCopia: false,
-          firmaTexto: firmaDisplayTexto, // Pasar el texto de la firma
+          firmaData: firmaDataParaPDF, // Pasar los datos de la firma decididos
+          firmaTexto: firmaTextoParaPDF, // Pasar el texto de la firma decidida
+          isSinFirma: isReciboSinFirma, // Indicar si es un recibo sin firma virtual
         });
 
         // Línea punteada para cortar
@@ -563,7 +876,9 @@
           fechaEnPalabras,
           numeroRecibo: numeroCompleto,
           esCopia: true,
-          firmaTexto: firmaDisplayTexto, // Pasar el texto de la firma
+          firmaData: firmaDataParaPDF, // Pasar los datos de la firma decididos
+          firmaTexto: firmaTextoParaPDF, // Pasar el texto de la firma decidida
+          isSinFirma: isReciboSinFirma, // Indicar si es un recibo sin firma virtual
         });
 
         // Guardar PDF (Ahora se abre un diálogo para elegir la carpeta)
@@ -591,7 +906,7 @@
           } else {
             console.error("Error al guardar el PDF:", error);
             alert(
-              "No se pudo guardar el PDF. ¿Quizás el navegador no soporta la selección de carpeta o el usuario canceló la operación?"
+              "No se pudo guardar el PDF. ¿Quizás el navegador no sopporta la selección de carpeta o el usuario canceló la operación?"
             );
           }
         }
@@ -625,7 +940,9 @@
           numeroRecibo,
           esCopia,
           fecha,
-          firmaTexto, // Recibimos el texto de la firma
+          firmaData, // Datos de la firma a usar (puede ser null)
+          firmaTexto, // Texto de la firma a usar
+          isSinFirma, // Nuevo: booleano para indicar si no hay firma virtual
         } = options;
 
         // Estilo del recibo
@@ -644,9 +961,8 @@
         let logoHeightDer = 0;
         let logoWidthDer = 0;
 
-        const logoIzqData = localStorage.getItem("logoIzquierdo");
-        const logoDerData = localStorage.getItem("logoDerecho");
-        const firmaData = localStorage.getItem("firma"); // Obtener datos de la firma
+        const logoIzqData = localStorage.getItem(STORAGE_KEYS.LOGO_IZQUIERDO);
+        const logoDerData = localStorage.getItem(STORAGE_KEYS.LOGO_DERECHO);
 
         // Calcular dimensiones para logo izquierdo
         if (logoIzqData) {
@@ -782,16 +1098,16 @@
 
         // Bucle para ajustar el tamaño de la fuente y el interlineado si el texto es demasiado largo
         do {
-            doc.setFontSize(fontSize);
-            lineas = doc.splitTextToSize(textoContenido, contenidoWidth);
-            totalTextoHeight = lineas.length * (fontSize * lineHeightRatio);
+          doc.setFontSize(fontSize);
+          lineas = doc.splitTextToSize(textoContenido, contenidoWidth);
+          totalTextoHeight = lineas.length * (fontSize * lineHeightRatio);
 
-            if (totalTextoHeight > maxContentHeight && fontSize > minFontSize) {
-                fontSize -= 0.5; // Reducir en 0.5pt si el texto es demasiado largo
-                lineHeightRatio = Math.max(1.1, lineHeightRatio * 0.95); // Ajustar el interlineado, con un mínimo de 1.1 para no amontonar
-            } else {
-                break; // El texto cabe o se alcanzó el tamaño mínimo de fuente
-            }
+          if (totalTextoHeight > maxContentHeight && fontSize > minFontSize) {
+            fontSize -= 0.5; // Reducir en 0.5pt si el texto es demasiado largo
+            lineHeightRatio = Math.max(1.1, lineHeightRatio * 0.95); // Ajustar el interlineado, con un mínimo de 1.1 para no amontonar
+          } else {
+            break; // El texto cabe o se alcanzó el tamaño mínimo de fuente
+          }
         } while (true);
 
         doc.setFont(undefined, "normal");
@@ -811,6 +1127,7 @@
 
         // --- Firma (imagen o línea) y texto de la firma ---
         if (firmaData) {
+          // Si hay imagen de firma (sea la guardada o la temporal)
           const dims = await getNaturalImageDimensions(firmaData);
           if (dims.width > 0 && dims.height > 0) {
             const ratio = dims.width / dims.height;
@@ -835,7 +1152,13 @@
               "FAST"
             );
           }
+        } else if (isSinFirma) {
+          // Si es un recibo sin firma virtual (solo línea)
+          doc.setDrawColor(0, 0, 0);
+          doc.setLineWidth(0.5);
+          doc.line(firmaX, firmaBaseY, firmaX + firmaMaxWidth, firmaBaseY); // Línea de firma
         } else {
+          // Si no hay firma (ni guardada, ni temporal, ni opción sin firma), dibuja una línea por defecto
           doc.setDrawColor(0, 0, 0);
           doc.setLineWidth(0.5);
           doc.line(firmaX, firmaBaseY, firmaX + firmaMaxWidth, firmaBaseY); // Línea de firma
